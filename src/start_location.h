@@ -2,19 +2,18 @@
 #ifndef START_LOCATION_H
 #define START_LOCATION_H
 
-#include "string_id.h"
-
+#include <cstddef>
+#include <set>
 #include <vector>
 #include <string>
-#include <map>
-#include <set>
 
-class overmap;
+#include "string_id.h"
+#include "type_id.h"
+
 class tinymap;
 class player;
 class JsonObject;
 struct tripoint;
-class start_location;
 template<typename T>
 class generic_factory;
 
@@ -28,7 +27,7 @@ class start_location
         std::string target() const;
         const std::set<std::string> &flags() const;
 
-        static void load_location( JsonObject &jo, const std::string &src );
+        static void load_location( const JsonObject &jo, const std::string &src );
         static void reset();
 
         static const std::vector<start_location> &get_all();
@@ -46,7 +45,7 @@ class start_location
          */
         void prepare_map( const tripoint &omtstart ) const;
         /**
-         * Place the player somewher ein th reality bubble (g->m).
+         * Place the player somewhere in the reality bubble (g->m).
          */
         void place_player( player &u ) const;
         /**
@@ -57,13 +56,20 @@ class start_location
          * @param count number of fire on the map.
          */
         void burn( const tripoint &omtstart,
-                   const size_t count, const int rad ) const;
+                   size_t count, int rad ) const;
         /**
-         * Adds a map special, see mapgen.h and mapgen.cpp. Look at the namespace MapExtras.
+         * Adds a map extra, see map_extras.h and map_extras.cpp. Look at the namespace MapExtras and class map_extras.
          */
-        void add_map_special( const tripoint &omtstart, const std::string &map_special ) const;
+        void add_map_extra( const tripoint &omtstart, const std::string &map_extra ) const;
 
         void handle_heli_crash( player &u ) const;
+
+        /**
+         * Adds surround start monsters.
+         * @param expected_points Expected value of "monster points" (map tiles times density from @ref map::place_spawns).
+         */
+        void surround_with_monsters( const tripoint &omtstart, const mongroup_id &type,
+                                     float expected_points ) const;
     private:
         friend class generic_factory<start_location>;
         string_id<start_location> id;
@@ -72,7 +78,7 @@ class start_location
         std::string _target;
         std::set<std::string> _flags;
 
-        void load( JsonObject &jo, const std::string &src );
+        void load( const JsonObject &jo, const std::string &src );
 
         void prepare_map( tinymap &m ) const;
 };

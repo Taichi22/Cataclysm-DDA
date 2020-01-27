@@ -2,27 +2,55 @@
 #ifndef OPTIONS_H
 #define OPTIONS_H
 
-#include <string>
 #include <map>
+#include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
-#include "json.h"
+#include <tuple>
 
-class options_manager : public JsonSerializer, public JsonDeserializer
+#include "translations.h"
+#include "optional.h"
+
+class JsonIn;
+class JsonOut;
+
+class options_manager
 {
+    public:
+        class id_and_option : public std::pair<std::string, translation>
+        {
+            public:
+                id_and_option( const std::string &first, const std::string &second )
+                    : std::pair<std::string, translation>( first, to_translation( second ) ) {
+                }
+                id_and_option( const std::string &first, const translation &second )
+                    : std::pair<std::string, translation>( first, second ) {
+                }
+        };
     private:
-        static std::string build_tilesets_list();
-        static std::string build_soundpacks_list();
+        static std::vector<id_and_option> build_tilesets_list();
+        static std::vector<id_and_option> build_soundpacks_list();
+        static std::vector<id_and_option> load_tilesets_from(
+            const std::string &path );
+        static std::vector<id_and_option> load_soundpack_from(
+            const std::string &path );
 
         bool load_legacy();
 
         void enable_json( const std::string &var );
         void add_retry( const std::string &var, const std::string &val );
 
+        void update_global_locale();
+
         std::map<std::string, std::string> post_json_verify;
+
+        std::map<std::string, std::pair<std::string, std::map<std::string, std::string> > > mMigrateOption;
 
         friend options_manager &get_options();
         options_manager();
+
+        void addOptionToPage( const std::string &name, const std::string &page );
 
     public:
         enum copt_hide_t {
@@ -36,7 +64,7 @@ class options_manager : public JsonSerializer, public JsonDeserializer
             COPT_POSIX_CURSES_HIDE,
             /** Hide this option in builds without sound support */
             COPT_NO_SOUND_HIDE,
-            /** Hide this option always, it is set as a mod. **/
+            /** Hide this option always, it should not be changed by user directly through UI. **/
             COPT_ALWAYS_HIDE
         };
 
@@ -44,16 +72,7 @@ class options_manager : public JsonSerializer, public JsonDeserializer
         {
                 friend class options_manager;
             public:
-                //Default constructor
                 cOpt();
-
-                //Default deconstructor
-                ~cOpt() {};
-
-                void setSortPos( const std::string sPageIn );
-
-                //helper functions
-                int getSortPos() const;
 
                 /**
                  * Option should be hidden in current build.
@@ -63,21 +82,28 @@ class options_manager : public JsonSerializer, public JsonDeserializer
 
                 std::string getName() const;
                 std::string getPage() const;
+                /// The translated displayed option name.
                 std::string getMenuText() const;
+                /// The translated displayed option tool tip.
                 std::string getTooltip() const;
                 std::string getType() const;
 
-                std::string getValue() const;
+                std::string getValue( bool classis_locale = false ) const;
+                /// The translated currently selected option value.
                 std::string getValueName() const;
-                std::string getDefaultText( const bool bTranslated = true ) const;
+                std::string getDefaultText( bool bTranslated = true ) const;
 
-                int getItemPos( const std::string sSearch ) const;
+                int getItemPos( const std::string &sSearch ) const;
+                std::vector<id_and_option> getItems() const;
+
+                int getIntPos( int iSearch ) const;
+                cata::optional< std::tuple<int, std::string> > findInt( int iSearch ) const;
 
                 int getMaxLength() const;
 
                 //set to next item
                 void setNext();
-                //set to prev item
+                //set to previous item
                 void setPrev();
                 //set value
                 void setValue( std::string sSetIn );
@@ -92,21 +118,50 @@ class options_manager : public JsonSerializer, public JsonDeserializer
                     return !operator==( rhs );
                 }
 
+                static std::vector<std::string> getPrerequisiteSupportedTypes() {
+                    return { "bool", "string", "string_select", "string_input" };
+                }
+
+                void setPrerequisites( const std::string &sOption, const std::vector<std::string> &sAllowedValues );
+                void setPrerequisite( const std::string &sOption, const std::string &sAllowedValue = "true" ) {
+                    setPrerequisites( sOption, { sAllowedValue } );
+                }
+                std::string getPrerequisite() const;
+                bool hasPrerequisite() const;
+                bool checkPrerequisite() const;
+
+                enum COPT_VALUE_TYPE {
+                    CVT_UNKNOWN = 0,
+                    CVT_BOOL = 1,
+                    CVT_STRING = 2,
+                    CVT_FLOAT = 3,
+                    CVT_INT = 4,
+                    CVT_VOID = 5
+                };
+
             private:
                 std::string sName;
                 std::string sPage;
+                // The *untranslated* displayed option name ( short string ).
                 std::string sMenuText;
+                // The *untranslated* displayed option tool tip ( longer string ).
                 std::string sTooltip;
                 std::string sType;
+                bool verbose;
 
                 std::string format;
 
+                std::string sPrerequisite;
+                std::vector<std::string> sPrerequisiteAllowedValues;
+
                 copt_hide_t hide;
-                int iSortPos;
+
+                COPT_VALUE_TYPE eType;
 
                 //sType == "string"
                 std::string sSet;
-                std::vector<std::string> vItems;
+                // first is internal value, second is untranslated text
+                std::vector<id_and_option> vItems;
                 std::string sDefault;
 
                 int iMaxLength;
@@ -120,7 +175,7 @@ class options_manager : public JsonSerializer, public JsonDeserializer
                 int iMin;
                 int iMax;
                 int iDefault;
-                std::map<int, std::string> mIntValues;
+                std::vector< std::tuple<int, std::string> > mIntValues;
 
                 //sType == "float"
                 float fSet;
@@ -130,70 +185,118 @@ class options_manager : public JsonSerializer, public JsonDeserializer
                 float fStep;
         };
 
+        using options_container = std::unordered_map<std::string, cOpt>;
+
         void init();
+        void add_options_general();
+        void add_options_interface();
+        void add_options_graphics();
+        void add_options_debug();
+        void add_options_world_default();
+        void add_options_android();
         void load();
         bool save();
-        void show( bool ingame = false );
+        std::string show( bool ingame = false, bool world_options_only = false );
 
-        void add_value( const std::string &myoption, const std::string &myval,
-                        const std::string &myvaltxt = "" );
+        void add_value( const std::string &lvar, const std::string &lval,
+                        const translation &lvalname );
 
-        using JsonSerializer::serialize;
-        void serialize( JsonOut &json ) const override;
-        void deserialize( JsonIn &jsin ) override;
+        void serialize( JsonOut &json ) const;
+        void deserialize( JsonIn &jsin );
+
+        std::string migrateOptionName( const std::string &name ) const;
+        std::string migrateOptionValue( const std::string &name, const std::string &val ) const;
 
         /**
          * Returns a copy of the options in the "world default" page. The options have their
          * current value, which acts as the default for new worlds.
          */
-        std::unordered_map<std::string, cOpt> get_world_defaults() const;
+        options_container get_world_defaults() const;
+
+        void set_world_options( options_container *options );
 
         /** Check if an option exists? */
         bool has_option( const std::string &name ) const;
 
         cOpt &get_option( const std::string &name );
-        cOpt &get_world_option( const std::string &name );
+
+        //add hidden external option with value
+        void add_external( const std::string &sNameIn, const std::string &sPageIn, const std::string &sType,
+                           const std::string &sMenuTextIn, const std::string &sTooltipIn );
 
         //add string select option
-        void add( const std::string sNameIn, const std::string sPageIn,
-                  const std::string sMenuTextIn, const std::string sTooltipIn,
-                  const std::string sItemsIn, std::string sDefaultIn,
+        void add( const std::string &sNameIn, const std::string &sPageIn,
+                  const std::string &sMenuTextIn, const std::string &sTooltipIn,
+                  // first is option value, second is display name of that value
+                  const std::vector<id_and_option> &sItemsIn, std::string sDefaultIn,
                   copt_hide_t opt_hide = COPT_NO_HIDE );
 
         //add string input option
-        void add( const std::string sNameIn, const std::string sPageIn,
-                  const std::string sMenuTextIn, const std::string sTooltipIn,
-                  const std::string sDefaultIn, const int iMaxLengthIn,
+        void add( const std::string &sNameIn, const std::string &sPageIn,
+                  const std::string &sMenuTextIn, const std::string &sTooltipIn,
+                  const std::string &sDefaultIn, int iMaxLengthIn,
                   copt_hide_t opt_hide = COPT_NO_HIDE );
 
         //add bool option
-        void add( const std::string sNameIn, const std::string sPageIn,
-                  const std::string sMenuTextIn, const std::string sTooltipIn,
-                  const bool bDefaultIn, copt_hide_t opt_hide = COPT_NO_HIDE );
+        void add( const std::string &sNameIn, const std::string &sPageIn,
+                  const std::string &sMenuTextIn, const std::string &sTooltipIn,
+                  bool bDefaultIn, copt_hide_t opt_hide = COPT_NO_HIDE );
 
         //add int option
-        void add( const std::string sNameIn, const std::string sPageIn,
-                  const std::string sMenuTextIn, const std::string sTooltipIn,
-                  const int iMinIn, int iMaxIn, int iDefaultIn,
+        void add( const std::string &sNameIn, const std::string &sPageIn,
+                  const std::string &sMenuTextIn, const std::string &sTooltipIn,
+                  int iMinIn, int iMaxIn, int iDefaultIn,
                   copt_hide_t opt_hide = COPT_NO_HIDE,
                   const std::string &format = "%i" );
 
         //add int map option
-        void add( const std::string sNameIn, const std::string sPageIn,
-                  const std::string sMenuTextIn, const std::string sTooltipIn,
-                  const std::map<int, std::string> mIntValuesIn, int iInitialIn,
-                  int iDefaultIn, copt_hide_t opt_hide = COPT_NO_HIDE );
+        void add( const std::string &sNameIn, const std::string &sPageIn,
+                  const std::string &sMenuTextIn, const std::string &sTooltipIn,
+                  const std::vector< std::tuple<int, std::string> > &mIntValuesIn,
+                  int iInitialIn, int iDefaultIn, copt_hide_t opt_hide = COPT_NO_HIDE,
+                  bool verbose = false );
 
         //add float option
-        void add( const std::string sNameIn, const std::string sPageIn,
-                  const std::string sMenuTextIn, const std::string sTooltipIn,
-                  const float fMinIn, float fMaxIn,
+        void add( const std::string &sNameIn, const std::string &sPageIn,
+                  const std::string &sMenuTextIn, const std::string &sTooltipIn,
+                  float fMinIn, float fMaxIn,
                   float fDefaultIn, float fStepIn,
                   copt_hide_t opt_hide = COPT_NO_HIDE,
                   const std::string &format = "%.2f" );
 
     private:
-        std::unordered_map<std::string, cOpt> global_options;
+        options_container options;
+        cata::optional<options_container *> world_options;
+
+        /**
+         * A page (or tab) to be displayed in the options UI.
+         * It contains a @ref id that is used to detect what options should go into this
+         * page (see @ref cOpt::getPage).
+         * It also has a name that will be translated and displayed.
+         * And it has items, each item is either nothing (will be represented as empty line
+         * in the UI) or the name of an option.
+         */
+        class Page
+        {
+            public:
+                std::string id_;
+                translation name_;
+
+                std::vector<cata::optional<std::string>> items_;
+
+                void removeRepeatedEmptyLines();
+
+                Page( const std::string &id, const translation &name ) : id_( id ), name_( name ) { }
+        };
+
+        Page general_page_;
+        Page interface_page_;
+        Page graphics_page_;
+        Page debug_page_;
+        Page world_default_page_;
+        Page android_page_;
+
+        std::vector<std::reference_wrapper<Page>> pages_;
 };
 
 bool use_narrow_sidebar(); // short-circuits to on if terminal is too small
@@ -208,8 +311,6 @@ extern std::map<std::string, std::string> TILESETS;
  * Second string is directory that contains soundpack.
  */
 extern std::map<std::string, std::string> SOUNDPACKS;
-extern std::map<int, std::vector<std::string> > mPageItems;
-extern int iWorldOptPage;
 
 options_manager &get_options();
 
@@ -217,12 +318,6 @@ template<typename T>
 inline T get_option( const std::string &name )
 {
     return get_options().get_option( name ).value_as<T>();
-}
-
-template<typename T>
-inline T get_world_option( const std::string &name )
-{
-    return get_options().get_world_option( name ).value_as<T>();
 }
 
 #endif

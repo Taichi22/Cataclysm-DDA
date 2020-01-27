@@ -2,23 +2,22 @@
 #ifndef DAMAGE_H
 #define DAMAGE_H
 
-#include "enums.h"
-#include "string_id.h"
-#include <string>
+#include <array>
+#include <map>
 #include <vector>
-#include <set>
-#include <memory>
+#include <string>
+
+#include "type_id.h"
 
 class item;
 class monster;
 class JsonObject;
-
-class Skill;
-using skill_id = string_id<Skill>;
+class JsonArray;
+class JsonIn;
 
 enum body_part : int;
 
-    enum damage_type : int {
+enum damage_type : int {
     DT_NULL = 0, // null damage, doesn't exist
     DT_TRUE, // typeless damage, should always go through
     DT_BIOLOGICAL, // internal damage, like from smoke or poison
@@ -41,8 +40,9 @@ struct damage_unit {
 
     damage_unit( damage_type dt, float a, float rp = 0.0f, float rm = 1.0f, float mul = 1.0f ) :
         type( dt ), amount( a ), res_pen( rp ), res_mult( rm ), damage_multiplier( mul ) { }
-};
 
+    bool operator==( const damage_unit &other ) const;
+};
 
 // a single atomic unit of damage from an attack. Can include multiple types
 // of damage at different armor mitigation/penetration values
@@ -57,6 +57,13 @@ struct damage_instance {
     void clear();
     bool empty() const;
 
+    std::vector<damage_unit>::iterator begin();
+    std::vector<damage_unit>::const_iterator begin() const;
+    std::vector<damage_unit>::iterator end();
+    std::vector<damage_unit>::const_iterator end() const;
+
+    bool operator==( const damage_instance &other ) const;
+
     /**
      * Adds damage to the instance.
      * If the damage type already exists in the instance, the old and new instance are normalized.
@@ -64,9 +71,11 @@ struct damage_instance {
      */
     /*@{*/
     void add_damage( damage_type dt, float a, float rp = 0.0f, float rm = 1.0f, float mul = 1.0f );
-    void add( const damage_instance &b );
-    void add( const damage_unit &b );
+    void add( const damage_instance &added_di );
+    void add( const damage_unit &added_du );
     /*@}*/
+
+    void deserialize( JsonIn & );
 };
 
 struct dealt_damage_instance {
@@ -95,18 +104,19 @@ struct resistances {
     resistances &operator+=( const resistances &other );
 };
 
+const std::map<std::string, damage_type> &get_dt_map();
 damage_type dt_by_name( const std::string &name );
-const std::string &name_by_dt( const damage_type &dt );
+std::string name_by_dt( const damage_type &dt );
 
 const skill_id &skill_by_dt( damage_type dt );
 
-damage_instance load_damage_instance( JsonObject &jo );
-damage_instance load_damage_instance( JsonArray &jarr );
+damage_instance load_damage_instance( const JsonObject &jo );
+damage_instance load_damage_instance( const JsonArray &jarr );
 
-resistances load_resistances_instance( JsonObject &jo );
+resistances load_resistances_instance( const JsonObject &jo );
 
 // Returns damage or resistance data
 // Handles some shorthands
-std::array<float, NUM_DT> load_damage_array( JsonObject &jo );
+std::array<float, NUM_DT> load_damage_array( const JsonObject &jo );
 
 #endif
